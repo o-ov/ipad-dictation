@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, -webkit-user-select=none">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>听写练习</title>
+<style>
+  :root {
+    --bg: #f8f5ef;
+    --card: #ffffff;
+    --accent: #5b8a72;
+    --accent2: #e07b54;
+    --text: #2c2c2c;
+    --text-light: #888;
+    --grid-line: #ddd8cc;
+    --grid-diag: #c8c0b4;
+    --red: #e05050;
+    --gold: #f0c040;
+    --blue: #4a90d9;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    font-family: -apple-system, 'PingFang SC', 'Noto Sans SC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .app { width: 100%; height: 100%; display: flex; flex-direction: column; }
+
+  /* Tab Bar */
+  .tab-bar {
+    display: flex;
+    background: var(--card);
+    border-bottom: 1px solid #e8e4dc;
+    flex-shrink: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 14px 8px;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-light);
+    cursor: pointer;
+    border: none;
+    background: none;
+    transition: color 0.2s;
+    border-bottom: 3px solid transparent;
+  }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-btn .tab-icon { font-size: 22px; display: block; margin-bottom: 4px; }
+
+  /* Pages */
+  .page { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+  .page.active { display: flex; }
+
+  /* ============ 听写页 ============ */
+  #dictation-page { padding: 16px; gap: 12px; }
+
+  .dict-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: var(--text-light);
+    flex-shrink: 0;
+  }
+  .dict-progress-bar {
+    flex: 1;
+    height: 6px;
+    background: #e0dbd2;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .dict-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+
+  .word-display {
+    text-align: center;
+    padding: 12px;
+    flex-shrink: 0;
+  }
+  .word-display .word {
+    font-size: 42px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 8px;
+  }
+  .word-display .hint {
+    font-size: 13px;
+    color: var(--text-light);
+    margin-top: 4px;
+  }
+  .word-display .pinyin {
+    font-size: 18px;
+    color: var(--accent);
+    margin-bottom: 4px;
+    min-height: 24px;
+  }
+
+  /* Canvas area */
+  .canvas-wrap {
+    flex: 1;
+    background: var(--card);
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+  }
+  #drawCanvas {
+    width: 100%; height: 100%;
+    display: block;
+    touch-action: none;
+  }
+
+  /* Grid overlay drawn on canvas */
+  .grid-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+  }
+
+  /* Action buttons */
+  .dict-actions {
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+    padding: 4px 0;
+  }
+  .btn {
+    flex: 1;
+    padding: 14px;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-speek { background: var(--accent); color: white; }
+  .btn-correct { background: var(--accent); color: white; }
+  .btn-wrong { background: #f0e0d8; color: var(--accent2); }
+  .btn-clear { background: #e8e4dc; color: var(--text); }
+  .btn-next { background: var(--accent2); color: white; }
+
+  /* Result flash */
+  .flash {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) scale(0.5);
+    font-size: 80px;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 100;
+    transition: none;
+  }
+  .flash.show {
+    animation: flashAnim 0.6s ease forwards;
+  }
+  @keyframes flashAnim {
+    0% { opacity: 1; transform: translate(-50%, -50%) scale(0.5); }
+    50% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(1.5); }
+  }
+
+  /* ============ 错题本页 ============ */
+  #wrong-page { padding: 16px; gap: 10px; }
+  .wrong-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .wrong-title { font-size: 17px; font-weight: 700; }
+  .wrong-count { font-size: 13px; color: var(--text-light); }
+  .clear-wrong-btn {
+    font-size: 13px;
+    color: var(--text-light);
+    background: none;
+    border: 1px solid #ddd;
+    padding: 4px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .wrong-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-bottom: 20px;
+  }
+  .wrong-item {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  }
+  .wrong-item-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .wrong-word { font-size: 28px; font-weight: 700; letter-spacing: 4px; }
+  .wrong-date { font-size: 12px; color: var(--text-light); }
+  .wrong-pinyin { font-size: 14px; color: var(--accent); margin-bottom: 8px; }
+  .wrong-btn-row { display: flex; gap: 8px; }
+  .wrong-btn {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .wrong-btn-practice { background: #e8f4ec; color: var(--accent); }
+  .wrong-btn-remove { background: #f5e8e8; color: var(--red); }
+
+  .wrong-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-light);
+    gap: 8px;
+  }
+  .wrong-empty-icon { font-size: 60px; }
+  .wrong-empty-text { font-size: 16px; }
+
+  /* ============ 词库页 ============ */
+  #words-page { padding: 16px; gap: 12px; }
+  .words-group { }
+  .words-group-title {
+    font-size: 13px;
+    color: var(--text-light);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .words-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 8px;
+  }
+  .word-chip {
+    background: var(--card);
+    border-radius: 10px;
+    padding: 10px 6px;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: box-shadow 0.15s, transform 0.1s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .word-chip:active { transform: scale(0.96); }
+  .word-chip.done { background: #e8f4ec; color: var(--accent); }
+  .word-chip.wrong { background: #fde8e8; color: var(--red); }
+
+  /* ============ 听写模式选择 ============ */
+  .mode-selector {
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .mode-btn {
+    flex: 1;
+    padding: 10px;
+    border: 2px solid #e0dbd2;
+    border-radius: 12px;
+    background: none;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-light);
+    cursor: pointer;
+  }
+  .mode-btn.active {
+    border-color: var(--accent);
+    background: #e8f4ec;
+    color: var(--accent);
+  }
+
+  /* Practice mode from wrong list */
+  .practice-modal {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .practice-modal.show { display: flex; }
+  .practice-modal-content {
+    background: var(--card);
+    border-radius: 20px;
+    width: 100%;
+    max-width: 600px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .practice-modal-header {
+    padding: 16px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .practice-modal-title { font-size: 16px; font-weight: 700; }
+  .practice-close {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: #f0ebe3;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .practice-modal-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 16px; gap: 10px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('dictation')">
+      <span class="tab-icon">📝</span>听写
+    </button>
+    <button class="tab-btn" onclick="switchTab('wrong')">
+      <span class="tab-icon">📕</span>错题本
+    </button>
+    <button class="tab-btn" onclick="switchTab('words')">
+      <span class="tab-icon">📖</span>词库
+    </button>
+  </div>
+
+  <!-- ========== 听写页 ========== -->
+  <div id="dictation-page" class="page active">
+    <div class="mode-selector">
+      <button class="mode-btn active" id="mode顺序" onclick="setMode('order')">顺序练习</button>
+      <button class="mode-btn" id="mode随机" onclick="setMode('random')">随机练习</button>
+      <button class="mode-btn" id="mode乱序" onclick="setMode('shuffle')">乱序</button>
+    </div>
+    <div class="dict-progress">
+      <span id="progressText">1/28</span>
+      <div class="dict-progress-bar"><div class="dict-progress-fill" id="progressFill" style="width:3.6%"></div></div>
+      <span id="errorCount" style="color:var(--accent2)">❌0</span>
+    </div>
+    <div class="word-display">
+      <div class="pinyin" id="pinyinDisplay"></div>
+      <div class="word" id="wordDisplay">故事</div>
+      <div class="hint" id="hintText">点击「播放」听发音</div>
+    </div>
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="drawCanvas"></canvas>
+    </div>
+    <div class="dict-actions">
+      <button class="btn btn-speek" onclick="playCurrentWord()">🔊 播放</button>
+      <button class="btn btn-clear" onclick="clearCanvas()">🗑️ 清除</button>
+      <button class="btn btn-correct" onclick="markCorrect()">✅ 正确</button>
+      <button class="btn btn-wrong" onclick="markWrong()">❌ 错误</button>
+      <button class="btn btn-next" onclick="nextWord()">下一题 ➡️</button>
+    </div>
+  </div>
+
+  <!-- ========== 错题本页 ========== -->
+  <div id="wrong-page" class="page">
+    <div class="wrong-header">
+      <div>
+        <div class="wrong-title">📕 错题本</div>
+        <div class="wrong-count" id="wrongCount">共 0 个错字</div>
+      </div>
+      <button class="clear-wrong-btn" onclick="clearAllWrong()">清空</button>
+    </div>
+    <div class="wrong-list" id="wrongList"></div>
+  </div>
+
+  <!-- ========== 词库页 ========== -->
+  <div id="words-page" class="page">
+    <div class="wrong-header">
+      <div class="wrong-title">📖 词库</div>
+    </div>
+    <div class="wrong-list" id="wordList"></div>
+  </div>
+
+  <!-- Flash effect -->
+  <div class="flash" id="flashCorrect">✓</div>
+  <div class="flash" id="flashWrong">✗</div>
+
+  <!-- 错题练习弹窗 -->
+  <div class="practice-modal" id="practiceModal">
+    <div class="practice-modal-content">
+      <div class="practice-modal-header">
+        <div class="practice-modal-title">📝 错字练习</div>
+        <button class="practice-close" onclick="closePractice()">✕</button>
+      </div>
+      <div class="practice-modal-body">
+        <div class="word-display" style="padding:8px">
+          <div class="word" id="practiceWord" style="font-size:48px">—</div>
+          <div class="hint">在下方写出这个字</div>
+        </div>
+        <div class="canvas-wrap" id="practiceCanvasWrap" style="flex:1">
+          <canvas id="practiceCanvas"></canvas>
+        </div>
+        <div class="dict-actions">
+          <button class="btn btn-clear" onclick="clearPracticeCanvas()">🗑️ 清除</button>
+          <button class="btn btn-correct" onclick="practiceCorrect()">✅ 记住了</button>
+          <button class="btn btn-wrong" onclick="practiceWrong()">❌ 记不住</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============ 词库 ============
+const WORD_GROUPS = [
+  {
+    label: '星期二',
+    words: ['故事','生活','甲骨文','样子','钱币','钱财','有关','觉得','饰品']
+  },
+  {
+    label: '星期四',
+    words: ['美食','茄子','烤鸭','水煮鱼','羊肉','蛋炒饭','鸡肉','辣乎乎','九霄云外','培土']
+  },
+  {
+    label: '星期五',
+    words: ['彩色','铅笔盒','森林','雪松','歌声','苹果','精灵','季节','流动','梦想','生硬','结束']
+  }
+];
+
+const ALL_WORDS = WORD_GROUPS.flatMap(g => g.words);
+const wordSet = new Set(ALL_WORDS);
+
+// ============ 状态 ============
+let currentIndex = 0;
+let mode = 'order'; // order, random, shuffle
+let wordOrder = [...ALL_WORDS];
+let wrongWords = JSON.parse(localStorage.getItem('dict_wrong') || '[]');
+let completedSet = new Set(JSON.parse(localStorage.getItem('dict_completed') || '[]'));
+let errorCount = 0;
+let currentPracticeWord = null;
+
+// ============ 语音 ============
+function speak(text) {
+  if (!text) return;
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'zh-CN';
+  utter.rate = 0.7;
+  utter.pitch = 1.0;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(utter);
+}
+
+// ============ Tab 切换 ============
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`).classList.add('active');
+  document.getElementById(`${tab}-page`).classList.add('active');
+  if (tab === 'wrong') renderWrongList();
+  if (tab === 'words') renderWordList();
+}
+
+// ============ 听写模式 ============
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`mode${m === 'order' ? '顺序' : m === 'random' ? '随机' : '乱序'}`).classList.add('active');
+  if (m === 'random') {
+    wordOrder = [...ALL_WORDS].sort(() => Math.random() - 0.5);
+  } else if (m === 'shuffle') {
+    // shuffle: 乱序，从当前位置开始打乱剩余
+    wordOrder = shuffleFrom(currentIndex);
+  } else {
+    wordOrder = [...ALL_WORDS];
+  }
+  currentIndex = 0;
+  updateWordDisplay();
+}
+
+// ============ 错题复习辅助 ============
+function shuffleFrom(idx) {
+  const remaining = ALL_WORDS.slice(idx);
+  const shuffled = [...remaining].sort(() => Math.random() - 0.5);
+  return [...ALL_WORDS.slice(0, idx), ...shuffled];
+}
+
+// ============ 进度更新 ============
+function updateWordDisplay() {
+  const word = wordOrder[currentIndex];
+  document.getElementById('wordDisplay').textContent = word;
+  document.getElementById('pinyinDisplay').textContent = '';
+  document.getElementById('hintText').textContent = '点击「播放」听发音';
+  document.getElementById('progressText').textContent = `${currentIndex + 1}/${wordOrder.length}`;
+  const pct = ((currentIndex + 1) / wordOrder.length) * 100;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('errorCount').textContent = `❌${errorCount}`;
+}
+
+// ============ 播放当前词 ============
+function playCurrentWord() {
+  const word = wordOrder[currentIndex];
+  speak(word);
+  document.getElementById('hintText').textContent = '仔细听...';
+  setTimeout(() => {
+    document.getElementById('hintText').textContent = '现在写下这个字';
+  }, 1500);
+}
+
+// ============ 标记正确/错误 ============
+function markCorrect() {
+  completedSet.add(wordOrder[currentIndex]);
+  localStorage.setItem('dict_completed', JSON.stringify([...completedSet]));
+  flash('Correct');
+  setTimeout(() => nextWord(), 500);
+}
+
+function markWrong() {
+  const word = wordOrder[currentIndex];
+  if (!wrongWords.includes(word)) {
+    wrongWords.push(word);
+    localStorage.setItem('dict_wrong', JSON.stringify(wrongWords));
+    errorCount++;
+  }
+  flash('Wrong');
+  setTimeout(() => nextWord(), 500);
+}
+
+function flash(type) {
+  const el = document.getElementById(type === 'Correct' ? 'flashCorrect' : 'flashWrong');
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 600);
+}
+
+// ============ 下一题 ============
+function nextWord() {
+  if (currentIndex < wordOrder.length - 1) {
+    currentIndex++;
+    if (mode === 'shuffle') {
+      // 保持乱序排列，移动指针
+    }
+  } else {
+    // 结束
+    document.getElementById('wordDisplay').textContent = '🎉';
+    document.getElementById('pinyinDisplay').textContent = '完成啦！';
+    document.getElementById('hintText').textContent = '所有词都练习完啦';
+    return;
+  }
+  clearCanvas();
+  updateWordDisplay();
+}
+
+// ============ 画布 ============
+let canvas, ctx;
+function initCanvas() {
+  canvas = document.getElementById('drawCanvas');
+  ctx = canvas.getContext('2d');
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  let drawing = false;
+  let lastX = 0, lastY = 0;
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const src = e.touches ? e.touches[0] : e;
+    return {
+      x: (src.clientX - rect.left) * scaleX,
+      y: (src.clientY - rect.top) * scaleY
+    };
+  }
+
+  function startDraw(e) {
+    e.preventDefault();
+    drawing = true;
+    const pos = getPos(e);
+    lastX = pos.x; lastY = pos.y;
+  }
+  function moveDraw(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    const pos = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 8;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    lastX = pos.x; lastY = pos.y;
+  }
+  function endDraw(e) {
+    e.preventDefault();
+    drawing = false;
+  }
+
+  canvas.addEventListener('mousedown', startDraw, {passive: false});
+  canvas.addEventListener('mousemove', moveDraw, {passive: false});
+  canvas.addEventListener('mouseup', endDraw, {passive: false});
+  canvas.addEventListener('mouseleave', endDraw, {passive: false});
+  canvas.addEventListener('touchstart', startDraw, {passive: false});
+  canvas.addEventListener('touchmove', moveDraw, {passive: false});
+  canvas.addEventListener('touchend', endDraw, {passive: false});
+}
+
+function resizeCanvas() {
+  const wrap = canvas.parentElement;
+  canvas.width = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  drawGrid();
+}
+
+function clearCanvas() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawGrid();
+}
+
+function drawGrid() {
+  if (!ctx) return;
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // 米字格背景
+  ctx.fillStyle = '#fffdf8';
+  ctx.fillRect(0, 0, w, h);
+
+  // 边框
+  ctx.strokeStyle = '#c8c0b0';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, w - 2, h - 2);
+
+  // 外框加粗
+  ctx.strokeStyle = '#a09888';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(3, 3, w - 6, h - 6);
+
+  // 中心十字线
+  ctx.strokeStyle = '#c8c0b0';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+
+  // 横中线
+  ctx.beginPath();
+  ctx.moveTo(0, h / 2);
+  ctx.lineTo(w, h / 2);
+  ctx.stroke();
+
+  // 竖中线
+  ctx.beginPath();
+  ctx.moveTo(w / 2, 0);
+  ctx.lineTo(w / 2, h);
+  ctx.stroke();
+
+  // 斜线（米字格的撇和捺）
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(w, h);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(w, 0);
+  ctx.lineTo(0, h);
+  ctx.stroke();
+
+  // 半透明米字辅助线
+  ctx.strokeStyle = 'rgba(180,170,155,0.25)';
+  ctx.lineWidth = 0.5;
+  // 横等分
+  [h/4, h*3/4].forEach(y => {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  });
+  // 竖等分
+  [w/4, w*3/4].forEach(x => {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  });
+}
+
+// ============ 错题本 ============
+function renderWrongList() {
+  const list = document.getElementById('wrongList');
+  document.getElementById('wrongCount').textContent = `共 ${wrongWords.length} 个错字`;
+  if (wrongWords.length === 0) {
+    list.innerHTML = `
+      <div class="wrong-empty">
+        <div class="wrong-empty-icon">🎉</div>
+        <div>太棒了！没有错字</div>
+      </div>`;
+    return;
+  }
+  list.innerHTML = wrongWords.map((w, i) => `
+    <div class="wrong-item">
+      <div class="wrong-item-top">
+        <span class="wrong-word">${w}</span>
+        <span class="wrong-date"></span>
+      </div>
+      <div class="wrong-pinyin"></div>
+      <div class="wrong-btn-row">
+        <button class="wrong-btn wrong-btn-practice" onclick="practiceWord('${w}')">✏️ 练习</button>
+        <button class="wrong-btn wrong-btn-remove" onclick="removeWrong(${i})">✓ 删除</button>
+      </div>
+    </div>`).join('');
+}
+
+function removeWrong(idx) {
+  wrongWords.splice(idx, 1);
+  localStorage.setItem('dict_wrong', JSON.stringify(wrongWords));
+  renderWrongList();
+}
+
+function clearAllWrong() {
+  if (!confirm('确定清空所有错字记录？')) return;
+  wrongWords = [];
+  localStorage.setItem('dict_wrong', JSON.stringify(wrongWords));
+  errorCount = 0;
+  renderWrongList();
+}
+
+// ============ 词库页 ============
+function renderWordList() {
+  const list = document.getElementById('wordList');
+  list.innerHTML = WORD_GROUPS.map(g => `
+    <div class="words-group" style="margin-bottom:14px">
+      <div class="words-group-title">${g.label}</div>
+      <div class="words-grid">
+        ${g.words.map(w => {
+          const isWrong = wrongWords.includes(w);
+          const isDone = completedSet.has(w) && !isWrong;
+          const cls = isWrong ? 'wrong' : isDone ? 'done' : '';
+          return `<div class="word-chip ${cls}" onclick="jumpToWord('${w}')">${w}</div>`;
+        }).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function jumpToWord(word) {
+  const idx = wordOrder.indexOf(word);
+  if (idx !== -1) {
+    currentIndex = idx;
+    switchTab('dictation');
+    updateWordDisplay();
+    clearCanvas();
+  }
+}
+
+// ============ 错字练习弹窗 ============
+let practiceCanvas, practiceCtx;
+function practiceWord(word) {
+  currentPracticeWord = word;
+  document.getElementById('practiceWord').textContent = word;
+  document.getElementById('practiceModal').classList.add('show');
+  setTimeout(() => {
+    initPracticeCanvas();
+    speak(word);
+  }, 100);
+}
+
+function closePractice() {
+  document.getElementById('practiceModal').classList.remove('show');
+  clearPracticeCanvas();
+  currentPracticeWord = null;
+}
+
+function initPracticeCanvas() {
+  practiceCanvas = document.getElementById('practiceCanvas');
+  practiceCtx = practiceCanvas.getContext('2d');
+  const wrap = practiceCanvas.parentElement;
+  practiceCanvas.width = wrap.clientWidth;
+  practiceCanvas.height = wrap.clientHeight;
+  drawPracticeGrid();
+
+  let drawing = false, lastX = 0, lastY = 0;
+  function getPos(e) {
+    const rect = practiceCanvas.getBoundingClientRect();
+    const scaleX = practiceCanvas.width / rect.width;
+    const scaleY = practiceCanvas.height / rect.height;
+    const src = e.touches ? e.touches[0] : e;
+    return { x: (src.clientX - rect.left) * scaleX, y: (src.clientY - rect.top) * scaleY };
+  }
+  function start(e) { e.preventDefault(); drawing = true; const p = getPos(e); lastX = p.x; lastY = p.y; }
+  function move(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    const p = getPos(e);
+    practiceCtx.beginPath();
+    practiceCtx.moveTo(lastX, lastY);
+    practiceCtx.lineTo(p.x, p.y);
+    practiceCtx.strokeStyle = '#1a1a1a';
+    practiceCtx.lineWidth = 10;
+    practiceCtx.lineCap = 'round';
+    practiceCtx.lineJoin = 'round';
+    practiceCtx.stroke();
+    lastX = p.x; lastY = p.y;
+  }
+  function end(e) { e.preventDefault(); drawing = false; }
+  practiceCanvas.addEventListener('mousedown', start, {passive: false});
+  practiceCanvas.addEventListener('mousemove', move, {passive: false});
+  practiceCanvas.addEventListener('mouseup', end, {passive: false});
+  practiceCanvas.addEventListener('mouseleave', end, {passive: false});
+  practiceCanvas.addEventListener('touchstart', start, {passive: false});
+  practiceCanvas.addEventListener('touchmove', move, {passive: false});
+  practiceCanvas.addEventListener('touchend', end, {passive: false});
+}
+
+function drawPracticeGrid() {
+  if (!practiceCtx) return;
+  const w = practiceCanvas.width, h = practiceCanvas.height;
+  practiceCtx.clearRect(0, 0, w, h);
+  practiceCtx.fillStyle = '#fffdf8';
+  practiceCtx.fillRect(0, 0, w, h);
+  practiceCtx.strokeStyle = '#c8c0b0';
+  practiceCtx.lineWidth = 2;
+  practiceCtx.strokeRect(1, 1, w - 2, h - 2);
+  practiceCtx.strokeStyle = '#a09888';
+  practiceCtx.lineWidth = 3;
+  practiceCtx.strokeRect(3, 3, w - 6, h - 6);
+  practiceCtx.strokeStyle = '#c8c0b0';
+  practiceCtx.lineWidth = 1;
+  practiceCtx.beginPath(); practiceCtx.moveTo(0, h/2); practiceCtx.lineTo(w, h/2); practiceCtx.stroke();
+  practiceCtx.beginPath(); practiceCtx.moveTo(w/2, 0); practiceCtx.lineTo(w/2, h); practiceCtx.stroke();
+  practiceCtx.beginPath(); practiceCtx.moveTo(0, 0); practiceCtx.lineTo(w, h); practiceCtx.stroke();
+  practiceCtx.beginPath(); practiceCtx.moveTo(w, 0); practiceCtx.lineTo(0, h); practiceCtx.stroke();
+}
+
+function clearPracticeCanvas() {
+  if (practiceCtx) {
+    practiceCtx.clearRect(0, 0, practiceCanvas.width, practiceCanvas.height);
+    drawPracticeGrid();
+  }
+}
+
+function practiceCorrect() {
+  speak('太棒了！');
+  setTimeout(closePractice, 400);
+}
+
+function practiceWrong() {
+  speak(currentPracticeWord);
+}
+
+// ============ 重置进度 ============
+function resetProgress() {
+  if (!confirm('确定重置所有进度？')) return;
+  completedSet = new Set();
+  wrongWords = [];
+  errorCount = 0;
+  localStorage.removeItem('dict_completed');
+  localStorage.removeItem('dict_wrong');
+  currentIndex = 0;
+  wordOrder = [...ALL_WORDS];
+  updateWordDisplay();
+  clearCanvas();
+}
+
+// ============ 初始化 ============
+window.addEventListener('load', () => {
+  initCanvas();
+  clearCanvas();
+  updateWordDisplay();
+});
+</script>
+</body>
+</html>
